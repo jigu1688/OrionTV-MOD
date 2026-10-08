@@ -87,7 +87,7 @@ export const useTVRemoteHandler = () => {
 
       resetTimer();
 
-      if (showControls) {
+      if (usePlayerStore.getState().showControls) {
         // 如果控制条已显示，则不处理后台的快进/快退等操作
         // 避免与控制条上的按钮焦点冲突
         return;

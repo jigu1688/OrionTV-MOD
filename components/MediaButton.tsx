@@ -1,16 +1,12 @@
-import React, { useState } from "react";
+import React, { memo } from "react";
 import {
   StyleSheet,
   View,
   Text,
   Pressable,
-  Animated,
   StyleProp,
   ViewStyle,
-  Platform,
 } from "react-native";
-import { useButtonAnimation } from "@/hooks/useAnimation";
-import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
 
 export interface MediaButtonProps {
   icon: React.ReactNode;
@@ -18,107 +14,75 @@ export interface MediaButtonProps {
   badge?: string;
   onPress?: () => void;
   disabled?: boolean;
-  hasTVPreferredFocus?: boolean;
-  onFocus?: () => void;
-  onBlur?: () => void;
   style?: StyleProp<ViewStyle>;
   active?: boolean;
   isFocused?: boolean;
 }
 
-export const MediaButton: React.FC<MediaButtonProps> = ({
+export const MediaButton = memo<MediaButtonProps>(({
   icon,
   label,
   badge,
   onPress,
   disabled = false,
-  hasTVPreferredFocus = false,
-  onFocus,
-  onBlur,
   style,
   active = false,
-  isFocused: controlledFocused,
+  isFocused = false,
 }) => {
-  const [internalFocused, setInternalFocused] = useState(false);
-  const effectiveFocused =
-    controlledFocused !== undefined ? controlledFocused : internalFocused;
-  const animationStyle = useButtonAnimation(effectiveFocused, 1.08);
-  const { deviceType } = useResponsiveLayout();
-
   return (
-    <Animated.View style={[animationStyle, style]}>
-      <Pressable
-        hasTVPreferredFocus={hasTVPreferredFocus}
-        focusable={!disabled}
-        disabled={disabled}
-        onPress={onPress}
-        onFocus={() => {
-          setInternalFocused(true);
-          onFocus?.();
-        }}
-        onBlur={() => {
-          setInternalFocused(false);
-          onBlur?.();
-        }}
-        android_ripple={
-          Platform.isTV || deviceType !== "tv"
-            ? { color: "transparent" }
-            : { color: "rgba(0, 187, 94, 0.3)" }
-        }
-        style={({ focused }) => {
-          const isButtonFocused =
-            controlledFocused !== undefined
-              ? controlledFocused
-              : internalFocused || focused;
-
-          return [
-            styles.button,
-            isButtonFocused ? styles.buttonFocused : styles.buttonNormal,
-            active && !isButtonFocused && styles.buttonActive,
-            disabled && styles.buttonDisabled,
-          ];
-        }}
-      >
-        {/* 右上角微标 / 状态信息 */}
-        {badge ? (
-          <View
-            style={[
-              styles.badgeContainer,
-              effectiveFocused && styles.badgeContainerFocused,
-            ]}
-          >
-            <Text
-              style={[
-                styles.badgeText,
-                effectiveFocused && styles.badgeTextFocused,
-              ]}
-              numberOfLines={1}
-            >
-              {badge}
-            </Text>
-          </View>
-        ) : null}
-
-        {/* 核心图标容器 */}
-        <View style={styles.iconContainer}>
-          {icon}
-        </View>
-
-        {/* 底部中文文本标注 */}
-        <Text
+    <Pressable
+      focusable={false}
+      disabled={disabled}
+      onPress={onPress}
+      android_ripple={{ color: "transparent" }}
+      style={[
+        styles.button,
+        isFocused ? styles.buttonFocused : styles.buttonNormal,
+        active && !isFocused && styles.buttonActive,
+        disabled && styles.buttonDisabled,
+        isFocused && styles.buttonScale,
+        style,
+      ]}
+    >
+      {/* 右上角微标 / 状态信息 */}
+      {badge ? (
+        <View
           style={[
-            styles.label,
-            effectiveFocused ? styles.labelFocused : styles.labelNormal,
-            disabled && styles.labelDisabled,
+            styles.badgeContainer,
+            isFocused && styles.badgeContainerFocused,
           ]}
-          numberOfLines={1}
         >
-          {label}
-        </Text>
-      </Pressable>
-    </Animated.View>
+          <Text
+            style={[
+              styles.badgeText,
+              isFocused && styles.badgeTextFocused,
+            ]}
+            numberOfLines={1}
+          >
+            {badge}
+          </Text>
+        </View>
+      ) : null}
+
+      {/* 核心图标容器 */}
+      <View style={styles.iconContainer}>{icon}</View>
+
+      {/* 底部中文文本标注 */}
+      <Text
+        style={[
+          styles.label,
+          isFocused ? styles.labelFocused : styles.labelNormal,
+          disabled && styles.labelDisabled,
+        ]}
+        numberOfLines={1}
+      >
+        {label}
+      </Text>
+    </Pressable>
   );
-};
+});
+
+MediaButton.displayName = "MediaButton";
 
 const styles = StyleSheet.create({
   button: {
@@ -131,6 +95,9 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 4,
     position: "relative",
+  },
+  buttonScale: {
+    transform: [{ scale: 1.06 }],
   },
   buttonNormal: {
     backgroundColor: "rgba(255, 255, 255, 0.12)",
@@ -199,3 +166,4 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
   },
 });
+

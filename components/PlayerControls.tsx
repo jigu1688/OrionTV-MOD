@@ -21,7 +21,7 @@ interface PlayerControlsProps {
   setShowControls: (show: boolean) => void;
 }
 
-export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls }) => {
+export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls, setShowControls }) => {
   const {
     currentEpisodeIndex,
     episodes,
@@ -45,8 +45,13 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls }) 
   const resources = useSources();
 
   const [focusedIndex, setFocusedIndex] = useState<number>(0);
+  const focusedIndexRef = useRef<number>(0);
   const [clockTime, setClockTime] = useState<string>("");
   const lastPressTimeRef = useRef<number>(0);
+
+  useEffect(() => {
+    focusedIndexRef.current = focusedIndex;
+  }, [focusedIndex]);
 
   useEffect(() => {
     const updateTime = () => {
@@ -60,10 +65,11 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls }) 
     return () => clearInterval(timer);
   }, []);
 
-  // 每次打开控制条时重置焦点至首个按钮
+  // 每次打开控制条时重置焦点到首个按键
   useEffect(() => {
     if (showControls) {
       setFocusedIndex(0);
+      focusedIndexRef.current = 0;
     }
   }, [showControls]);
 
@@ -180,27 +186,26 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls }) 
     }
   };
 
-  useTVEventHandler((event) => {
-    if (!showControls) return;
+  // 遥控器事件处理：左右按键 0ms 瞬间跳跃，单步到位，杜绝浅色先行与延迟
+  useTVEventHandler((evt) => {
+    if (!usePlayerStore.getState().showControls) return;
 
-    if (event.eventType === "right") {
+    if (evt.eventType === "left") {
       setFocusedIndex((prev) => {
-        let next = prev + 1;
-        while (next < buttonConfigs.length && buttonConfigs[next]?.disabled) {
-          next++;
-        }
-        return next < buttonConfigs.length ? next : prev;
+        const next = Math.max(0, prev - 1);
+        focusedIndexRef.current = next;
+        return next;
       });
-    } else if (event.eventType === "left") {
+    } else if (evt.eventType === "right") {
       setFocusedIndex((prev) => {
-        let next = prev - 1;
-        while (next >= 0 && buttonConfigs[next]?.disabled) {
-          next--;
-        }
-        return next >= 0 ? next : prev;
+        const next = Math.min(buttonConfigs.length - 1, prev + 1);
+        focusedIndexRef.current = next;
+        return next;
       });
-    } else if (event.eventType === "select") {
-      handleExecute(focusedIndex);
+    } else if (evt.eventType === "select") {
+      handleExecute(focusedIndexRef.current);
+    } else if (evt.eventType === "up") {
+      setShowControls(false);
     }
   });
 
@@ -266,15 +271,17 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls }) 
           {buttonConfigs.map((btn, index) => (
             <MediaButton
               key={btn.key}
-              hasTVPreferredFocus={showControls && index === 0}
               isFocused={focusedIndex === index}
               disabled={btn.disabled}
               active={btn.active}
               icon={btn.icon}
               label={btn.label}
               badge={btn.badge}
-              onFocus={() => setFocusedIndex(index)}
-              onPress={() => handleExecute(index)}
+              onPress={() => {
+                setFocusedIndex(index);
+                focusedIndexRef.current = index;
+                handleExecute(index);
+              }}
             />
           ))}
         </View>
