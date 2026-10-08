@@ -12,7 +12,16 @@ const CONTROLS_TIMEOUT = 5000;
  * @returns onScreenPress - 一个函数，用于处理屏幕点击事件，以显示控件并重置定时器。
  */
 export const useTVRemoteHandler = () => {
-  const { showControls, setShowControls, showEpisodeModal, togglePlayPause, seek } = usePlayerStore();
+  const {
+    showControls,
+    setShowControls,
+    showEpisodeModal,
+    showSourceModal,
+    showSpeedModal,
+    togglePlayPause,
+    seek,
+    flushSeek,
+  } = usePlayerStore();
 
   const controlsTimer = useRef<NodeJS.Timeout | null>(null);
   const fastForwardIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -60,7 +69,8 @@ export const useTVRemoteHandler = () => {
   // 处理遥控器事件
   const handleTVEvent = useCallback(
     (event: HWEvent) => {
-      if (showEpisodeModal) {
+      // 当任一弹窗处于打开状态时，禁止底层播放器捕获按键，避免焦点串扰
+      if (showEpisodeModal || showSourceModal || showSpeedModal) {
         return;
       }
 
@@ -70,6 +80,8 @@ export const useTVRemoteHandler = () => {
             clearInterval(fastForwardIntervalRef.current);
             fastForwardIntervalRef.current = null;
           }
+          // 松开长按键时，立即将累积的虚拟快进位置提交给 ExoPlayer
+          flushSeek();
         }
       }
 
@@ -87,10 +99,11 @@ export const useTVRemoteHandler = () => {
           setShowControls(true);
           break;
         case "left":
-          seek(-SEEK_STEP); // 快退15秒
+          seek(-SEEK_STEP);
           break;
         case "longLeft":
           if (!fastForwardIntervalRef.current && event.eventKeyAction === 0) {
+            seek(-SEEK_STEP);
             fastForwardIntervalRef.current = setInterval(() => {
               seek(-SEEK_STEP); 
             }, 200);
@@ -102,6 +115,7 @@ export const useTVRemoteHandler = () => {
         case "longRight":
           // 长按开始: 启动连续快进
           if (!fastForwardIntervalRef.current && event.eventKeyAction === 0) {
+            seek(SEEK_STEP);
             fastForwardIntervalRef.current = setInterval(() => {
               seek(SEEK_STEP); 
             }, 200);
@@ -112,7 +126,17 @@ export const useTVRemoteHandler = () => {
           break;
       }
     },
-    [showControls, showEpisodeModal, setShowControls, resetTimer, togglePlayPause, seek]
+    [
+      showControls,
+      showEpisodeModal,
+      showSourceModal,
+      showSpeedModal,
+      setShowControls,
+      resetTimer,
+      togglePlayPause,
+      seek,
+      flushSeek,
+    ]
   );
 
   useTVEventHandler(handleTVEvent);

@@ -42,6 +42,7 @@ interface PlayerState {
   playEpisode: (index: number) => void;
   togglePlayPause: () => void;
   seek: (duration: number) => void;
+  flushSeek: () => void;
   handlePlaybackStatusUpdate: (newStatus: AVPlaybackStatus) => void;
   setLoading: (loading: boolean) => void;
   setShowControls: (show: boolean) => void;
@@ -54,6 +55,8 @@ interface PlayerState {
   setOutroStartTime: () => void;
   reset: () => void;
   _seekTimeout?: NodeJS.Timeout;
+  _seekDebounceTimer?: NodeJS.Timeout;
+  _targetSeekMillis?: number;
   _isRecordSaveThrottled: boolean;
   // Internal helper
   _savePlayRecord: (updates?: Partial<PlayRecord>, options?: { immediate?: boolean }) => void;
@@ -272,28 +275,72 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
     }
   },
 
-  seek: async (duration) => {
-    const { status, videoRef } = get();
+  seek: (duration) => {
+    const { status, isSeeking, _targetSeekMillis, _seekDebounceTimer, _seekTimeout, videoRef } = get();
     if (!status?.isLoaded || !status.durationMillis) return;
 
-    const newPosition = Math.max(0, Math.min(status.positionMillis + duration, status.durationMillis));
-    try {
-      await videoRef?.current?.setPositionAsync(newPosition);
-    } catch (error) {
-      logger.debug("Failed to seek video:", error);
-      Toast.show({ type: "error", text1: "快进/快退失败" });
+    // 如果已经在快速微调，以目标虚拟进度为基准累加，否则以当前播放位置为基准
+    const currentBase = isSeeking && typeof _targetSeekMillis === "number"
+      ? _targetSeekMillis
+      : status.positionMillis;
+
+    const newPosition = Math.max(0, Math.min(currentBase + duration, status.durationMillis));
+
+    if (_seekDebounceTimer) {
+      clearTimeout(_seekDebounceTimer);
+    }
+    if (_seekTimeout) {
+      clearTimeout(_seekTimeout);
     }
 
+    // 毫秒级即时更新 UI 进度条与时间提示（虚拟滑动轴）
     set({
       isSeeking: true,
       seekPosition: newPosition / status.durationMillis,
+      _targetSeekMillis: newPosition,
     });
 
-    if (get()._seekTimeout) {
-      clearTimeout(get()._seekTimeout);
+    // 防抖 400ms 后才真正向 ExoPlayer 发出解码器定位指令，避免高频请求冲垮解码器
+    const debounceTimer = setTimeout(async () => {
+      const targetPos = get()._targetSeekMillis;
+      if (typeof targetPos === "number") {
+        try {
+          await videoRef?.current?.setPositionAsync(targetPos);
+        } catch (error) {
+          logger.debug("Failed to set position:", error);
+        }
+      }
+      const hideTimer = setTimeout(() => {
+        set({ isSeeking: false, _targetSeekMillis: undefined });
+      }, 800);
+      set({ _seekTimeout: hideTimer, _seekDebounceTimer: undefined });
+    }, 400);
+
+    set({ _seekDebounceTimer: debounceTimer });
+  },
+
+  flushSeek: async () => {
+    const { _seekDebounceTimer, _seekTimeout, _targetSeekMillis, videoRef } = get();
+    if (_seekDebounceTimer) {
+      clearTimeout(_seekDebounceTimer);
     }
-    const timeoutId = setTimeout(() => set({ isSeeking: false }), 1000);
-    set({ _seekTimeout: timeoutId });
+    if (_seekTimeout) {
+      clearTimeout(_seekTimeout);
+    }
+
+    if (typeof _targetSeekMillis === "number") {
+      try {
+        await videoRef?.current?.setPositionAsync(_targetSeekMillis);
+      } catch (error) {
+        logger.debug("Failed to flush seek position:", error);
+      }
+    }
+
+    const hideTimer = setTimeout(() => {
+      set({ isSeeking: false, _targetSeekMillis: undefined });
+    }, 600);
+
+    set({ _seekDebounceTimer: undefined, _seekTimeout: hideTimer });
   },
 
   setIntroEndTime: () => {
@@ -452,6 +499,10 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   reset: () => {
+    const { _seekTimeout, _seekDebounceTimer } = get();
+    if (_seekTimeout) clearTimeout(_seekTimeout);
+    if (_seekDebounceTimer) clearTimeout(_seekDebounceTimer);
+
     set({
       episodes: [],
       currentEpisodeIndex: 0,
@@ -462,6 +513,11 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       showSourceModal: false,
       showSpeedModal: false,
       showNextEpisodeOverlay: false,
+      isSeeking: false,
+      seekPosition: 0,
+      _targetSeekMillis: undefined,
+      _seekDebounceTimer: undefined,
+      _seekTimeout: undefined,
       initialPosition: 0,
       playbackRate: 1.0,
       introEndTime: undefined,

@@ -112,15 +112,21 @@ export const StyledButton = forwardRef<View, StyledButtonProps>(
         <Pressable
           android_ripple={Platform.isTV || deviceType !== 'tv'? { color: 'transparent' } : { color: Colors.dark.link }}
           ref={ref}
-          onFocus={() => setIsFocused(true)}
-          onBlur={() => setIsFocused(false)}
+          {...rest}
+          onFocus={(e) => {
+            setIsFocused(true);
+            rest.onFocus?.(e);
+          }}
+          onBlur={(e) => {
+            setIsFocused(false);
+            rest.onBlur?.(e);
+          }}
           style={({ focused }) => [
             styles.button,
             variantStyles[variant].button,
             isSelected && (variantStyles[variant].selectedButton ?? styles.selectedButton),
             focused && (variantStyles[variant].focusedButton ?? styles.focusedButton),
           ]}
-          {...rest}
         >
           {text ? (
             <ThemedText

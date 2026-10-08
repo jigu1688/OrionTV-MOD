@@ -7,7 +7,7 @@ jest.mock("react-native", () => ({
   },
 }));
 
-const mockedDimensions = Dimensions as jest.Mocked<typeof Dimensions>;
+const mockedDimensions = Dimensions as any;
 
 describe("DeviceUtils", () => {
   beforeEach(() => {

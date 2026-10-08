@@ -1,5 +1,5 @@
-import React, { useCallback, useRef, useState, useEffect } from "react";
-import { View, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity, BackHandler } from "react-native";
+import React, { useCallback, useRef, useState, useEffect, useMemo } from "react";
+import { View, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity, BackHandler, Platform } from "react-native";
 import { ThemedText } from "@/components/ThemedText";
 import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
 import { getCommonResponsiveStyles } from "@/utils/ResponsiveStyles";
@@ -29,14 +29,20 @@ const CustomScrollView: React.FC<CustomScrollViewProps> = ({
   emptyMessage = "暂无内容",
   ListFooterComponent,
 }) => {
-  const scrollViewRef = useRef<ScrollView>(null);
-  const firstCardRef = useRef<any>(null); // <--- 新增
+  const flatListRef = useRef<FlatList>(null);
   const [showScrollToTop, setShowScrollToTop] = useState(false);
   const responsiveConfig = useResponsiveLayout();
   const commonStyles = getCommonResponsiveStyles(responsiveConfig);
   const { deviceType } = responsiveConfig;
 
-  // 添加返回键处理逻辑
+  // 使用响应式列数，如果没有明确指定的话
+  const effectiveColumns = numColumns || responsiveConfig.columns;
+
+  const scrollToTop = useCallback(() => {
+    flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
+  }, []);
+
+  // 添加返回键处理逻辑：在 TV 端滚动到底部后，按返回键先返回顶部
   useEffect(() => {
     if (deviceType === 'tv') {
       const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -49,10 +55,7 @@ const CustomScrollView: React.FC<CustomScrollViewProps> = ({
 
       return () => backHandler.remove();
     }
-  }, [showScrollToTop,deviceType]);
-
-  // 使用响应式列数，如果没有明确指定的话
-  const effectiveColumns = numColumns || responsiveConfig.columns;
+  }, [showScrollToTop, deviceType, scrollToTop]);
 
   const handleScroll = useCallback(
     ({ nativeEvent }: { nativeEvent: any }) => {
@@ -69,15 +72,7 @@ const CustomScrollView: React.FC<CustomScrollViewProps> = ({
     [onEndReached, loadingMore, loadMoreThreshold]
   );
 
-  const scrollToTop = () => {
-    scrollViewRef.current?.scrollTo({ y: 0, animated: true });
-    // 滚动动画结束后聚焦第一个卡片
-    setTimeout(() => {
-      firstCardRef.current?.focus();
-    }, 500); // 500ms 适配大多数动画时长
-  };
-
-  const renderFooter = () => {
+  const renderFooter = useCallback(() => {
     if (ListFooterComponent) {
       if (React.isValidElement(ListFooterComponent)) {
         return ListFooterComponent;
@@ -91,7 +86,82 @@ const CustomScrollView: React.FC<CustomScrollViewProps> = ({
       return <ActivityIndicator style={{ marginVertical: 20 }} size="large" />;
     }
     return null;
-  };
+  }, [ListFooterComponent, loadingMore]);
+
+  // 将数据按行分组并使用 useMemo 缓存
+  const rows = useMemo(() => {
+    const grouped = [];
+    for (let i = 0; i < data.length; i += effectiveColumns) {
+      grouped.push(data.slice(i, i + effectiveColumns));
+    }
+    return grouped;
+  }, [data, effectiveColumns]);
+
+  // 动态样式
+  const dynamicStyles = useMemo(
+    () =>
+      StyleSheet.create({
+        listContent: {
+          paddingBottom: responsiveConfig.spacing * 2,
+          paddingHorizontal: responsiveConfig.spacing / 2,
+        },
+        rowContainer: {
+          flexDirection: "row",
+          marginBottom: responsiveConfig.spacing,
+        },
+        fullRowContainer: {
+          justifyContent: "space-around",
+          marginRight: responsiveConfig.spacing / 2,
+        },
+        partialRowContainer: {
+          justifyContent: "flex-start",
+        },
+        itemContainer: {
+          width: responsiveConfig.cardWidth,
+        },
+        itemWithMargin: {
+          width: responsiveConfig.cardWidth,
+          marginRight: responsiveConfig.spacing,
+        },
+        scrollToTopButton: {
+          position: "absolute",
+          right: responsiveConfig.spacing,
+          bottom: responsiveConfig.spacing * 2,
+          backgroundColor: "rgba(0, 0, 0, 0.6)",
+          padding: responsiveConfig.spacing,
+          borderRadius: responsiveConfig.spacing,
+          opacity: showScrollToTop ? 1 : 0,
+        },
+      }),
+    [responsiveConfig, showScrollToTop]
+  );
+
+  const renderRow = useCallback(
+    ({ item: row, index: rowIndex }: { item: any[]; index: number }) => {
+      const isFullRow = row.length === effectiveColumns;
+      const rowStyle = isFullRow ? dynamicStyles.fullRowContainer : dynamicStyles.partialRowContainer;
+
+      return (
+        <View style={[dynamicStyles.rowContainer, rowStyle]}>
+          {row.map((item, itemIndex) => {
+            const actualIndex = rowIndex * effectiveColumns + itemIndex;
+            const isLastItemInPartialRow = !isFullRow && itemIndex === row.length - 1;
+            const itemStyle = isLastItemInPartialRow ? dynamicStyles.itemContainer : dynamicStyles.itemWithMargin;
+
+            return (
+              <View
+                key={item?.id ? `item-${item.id}-${actualIndex}` : `item-${actualIndex}`}
+                style={isFullRow ? dynamicStyles.itemContainer : itemStyle}
+              >
+                {renderItem({ item, index: actualIndex })}
+              </View>
+            );
+          })}
+        </View>
+      );
+    },
+    [effectiveColumns, dynamicStyles, renderItem]
+  );
 
   if (loading) {
     return (
@@ -119,97 +189,26 @@ const CustomScrollView: React.FC<CustomScrollViewProps> = ({
     );
   }
 
-  // 将数据按行分组
-  const groupItemsByRow = (items: any[], columns: number) => {
-    const rows = [];
-    for (let i = 0; i < items.length; i += columns) {
-      rows.push(items.slice(i, i + columns));
-    }
-    return rows;
-  };
-
-  const rows = groupItemsByRow(data, effectiveColumns);
-
-  // 动态样式
-  const dynamicStyles = StyleSheet.create({
-    listContent: {
-      paddingBottom: responsiveConfig.spacing * 2,
-      paddingHorizontal: responsiveConfig.spacing / 2,
-    },
-    rowContainer: {
-      flexDirection: "row",
-      marginBottom: responsiveConfig.spacing,
-    },
-    fullRowContainer: {
-      justifyContent: "space-around",
-      marginRight: responsiveConfig.spacing / 2,
-    },
-    partialRowContainer: {
-      justifyContent: "flex-start",
-    },
-    itemContainer: {
-      width: responsiveConfig.cardWidth,
-    },
-    itemWithMargin: {
-      width: responsiveConfig.cardWidth,
-      marginRight: responsiveConfig.spacing,
-    },
-    scrollToTopButton: {
-      position: 'absolute',
-      right: responsiveConfig.spacing,
-      bottom: responsiveConfig.spacing * 2,
-      backgroundColor: 'rgba(0, 0, 0, 0.6)',
-      padding: responsiveConfig.spacing,
-      borderRadius: responsiveConfig.spacing,
-      opacity: showScrollToTop ? 1 : 0,
-    },
-  });
-
   return (
     <View style={{ flex: 1 }}>
-      <ScrollView
-        ref={scrollViewRef}
+      <FlatList
+        ref={flatListRef}
+        data={rows}
+        keyExtractor={(_, index) => `row-${index}`}
+        renderItem={renderRow}
         contentContainerStyle={dynamicStyles.listContent}
         onScroll={handleScroll}
         scrollEventThrottle={16}
-        showsVerticalScrollIndicator={responsiveConfig.deviceType !== 'tv'}
-      >
-        {data.length > 0 ? (
-          <>
-            {rows.map((row, rowIndex) => {
-              const isFullRow = row.length === effectiveColumns;
-              const rowStyle = isFullRow ? dynamicStyles.fullRowContainer : dynamicStyles.partialRowContainer;
-
-              return (
-                <View key={rowIndex} style={[dynamicStyles.rowContainer, rowStyle]}>
-                  {row.map((item, itemIndex) => {
-                    const actualIndex = rowIndex * effectiveColumns + itemIndex;
-                    const isLastItemInPartialRow = !isFullRow && itemIndex === row.length - 1;
-                    const itemStyle = isLastItemInPartialRow ? dynamicStyles.itemContainer : dynamicStyles.itemWithMargin;
-
-                    const cardProps = {
-                      key: actualIndex,
-                      style: isFullRow ? dynamicStyles.itemContainer : itemStyle,
-                    };
-
-                    return (
-                      <View {...cardProps}>
-                        {renderItem({ item, index: actualIndex })}
-                      </View>
-                    );
-                  })}
-                </View>
-              );
-            })}
-            {renderFooter()}
-          </>
-        ) : (
-          <View style={commonStyles.center}>
-            <ThemedText>{emptyMessage}</ThemedText>
-          </View>
-        )}
-      </ScrollView>
-      {deviceType!=='tv' && (
+        onEndReached={onEndReached}
+        onEndReachedThreshold={0.5}
+        initialNumToRender={4}
+        maxToRenderPerBatch={4}
+        windowSize={5}
+        removeClippedSubviews={Platform.OS === "android"}
+        showsVerticalScrollIndicator={deviceType !== "tv"}
+        ListFooterComponent={renderFooter}
+      />
+      {deviceType !== "tv" && (
         <TouchableOpacity
           style={dynamicStyles.scrollToTopButton}
           onPress={scrollToTop}

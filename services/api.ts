@@ -88,22 +88,46 @@ export class API {
     this.baseURL = url;
   }
 
-  private async _fetch(url: string, options: RequestInit = {}): Promise<Response> {
+  private async _fetch(url: string, options: RequestInit = {}, timeoutMs = 10000): Promise<Response> {
     if (!this.baseURL) {
       throw new Error("API_URL_NOT_SET");
     }
 
-    const response = await fetch(`${this.baseURL}${url}`, options);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+      controller.abort();
+    }, timeoutMs);
 
-    if (response.status === 401) {
-      throw new Error("UNAUTHORIZED");
+    if (options.signal) {
+      if (options.signal.aborted) {
+        clearTimeout(timeoutId);
+        controller.abort();
+      } else {
+        options.signal.addEventListener("abort", () => {
+          clearTimeout(timeoutId);
+          controller.abort();
+        });
+      }
     }
 
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
+    try {
+      const response = await fetch(`${this.baseURL}${url}`, {
+        ...options,
+        signal: controller.signal,
+      });
 
-    return response;
+      if (response.status === 401) {
+        throw new Error("UNAUTHORIZED");
+      }
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      return response;
+    } finally {
+      clearTimeout(timeoutId);
+    }
   }
 
   async login(username?: string | undefined, password?: string): Promise<{ ok: boolean }> {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef, forwardRef } from "react";
+import React, { useState, useCallback, useRef, forwardRef } from "react";
 import { View, Text, Image, StyleSheet, Pressable, TouchableOpacity, Alert, Animated, Platform } from "react-native";
 import { useRouter } from "expo-router";
 import { Star, Play } from "lucide-react-native";
@@ -49,7 +49,6 @@ const VideoCard = forwardRef<View, VideoCardProps>(
   ) => {
     const router = useRouter();
     const [isFocused, setIsFocused] = useState(false);
-    const [fadeAnim] = useState(new Animated.Value(0));
 
     const longPressTriggered = useRef(false);
 
@@ -99,15 +98,6 @@ const VideoCard = forwardRef<View, VideoCardProps>(
       }).start();
     }, [scale]);
 
-    useEffect(() => {
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 400,
-        delay: Math.random() * 200, // 随机延迟创造交错效果
-        useNativeDriver: true,
-      }).start();
-    }, [fadeAnim]);
-
     const handleLongPress = () => {
       // Only allow long press for items with progress (play records)
       if (progress === undefined) return;
@@ -149,7 +139,7 @@ const VideoCard = forwardRef<View, VideoCardProps>(
     const isContinueWatching = progress !== undefined && progress > 0 && progress < 1;
 
     return (
-      <Animated.View style={[styles.wrapper, animatedStyle, { opacity: fadeAnim }]}>
+      <Animated.View style={[styles.wrapper, animatedStyle]}>
         <Pressable
           android_ripple={Platform.isTV || deviceType !== 'tv' ? { color: 'transparent' } : { color: Colors.dark.link }}
           onPress={handlePress}

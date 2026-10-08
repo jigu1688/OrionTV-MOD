@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { View, Text, StyleSheet, Image, ScrollView, ActivityIndicator } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { ThemedView } from "@/components/ThemedView";
@@ -33,6 +33,27 @@ export default function DetailScreen() {
     isFavorited,
     toggleFavorite,
   } = useDetailStore();
+
+  const EPISODE_GROUP_SIZE = 30;
+  const [selectedEpisodeGroup, setSelectedEpisodeGroup] = useState(0);
+
+  // 当视频详情或数据源发生改变时，重置剧集分组为第 1 组
+  useEffect(() => {
+    setSelectedEpisodeGroup(0);
+  }, [detail?.source, detail?.id]);
+
+  const displayedEpisodes = useMemo(() => {
+    if (!detail?.episodes) return [];
+    if (detail.episodes.length <= EPISODE_GROUP_SIZE) {
+      return detail.episodes.map((ep, idx) => ({ ep, index: idx }));
+    }
+    const start = selectedEpisodeGroup * EPISODE_GROUP_SIZE;
+    const end = Math.min(start + EPISODE_GROUP_SIZE, detail.episodes.length);
+    return detail.episodes.slice(start, end).map((ep, relIdx) => ({
+      ep,
+      index: start + relIdx,
+    }));
+  }, [detail?.episodes, selectedEpisodeGroup]);
 
   useEffect(() => {
     if (q) {
@@ -176,8 +197,29 @@ export default function DetailScreen() {
           {/* 剧集列表 */}
           <View style={dynamicStyles.episodesContainer}>
             <ThemedText style={dynamicStyles.episodesTitle}>播放列表</ThemedText>
+            {detail.episodes.length > EPISODE_GROUP_SIZE && (
+              <View style={dynamicStyles.episodeGroupContainer}>
+                {Array.from(
+                  { length: Math.ceil(detail.episodes.length / EPISODE_GROUP_SIZE) },
+                  (_, groupIndex) => {
+                    const start = groupIndex * EPISODE_GROUP_SIZE + 1;
+                    const end = Math.min((groupIndex + 1) * EPISODE_GROUP_SIZE, detail.episodes.length);
+                    return (
+                      <StyledButton
+                        key={groupIndex}
+                        text={`${start}-${end}`}
+                        onPress={() => setSelectedEpisodeGroup(groupIndex)}
+                        isSelected={selectedEpisodeGroup === groupIndex}
+                        style={dynamicStyles.episodeGroupButton}
+                        textStyle={dynamicStyles.episodeGroupButtonText}
+                      />
+                    );
+                  }
+                )}
+              </View>
+            )}
             <View style={dynamicStyles.episodeList}>
-              {detail.episodes.map((episode, index) => (
+              {displayedEpisodes.map(({ index }) => (
                 <StyledButton
                   key={index}
                   style={dynamicStyles.episodeButton}
@@ -257,8 +299,29 @@ export default function DetailScreen() {
             </View>
             <View style={dynamicStyles.episodesContainer}>
               <ThemedText style={dynamicStyles.episodesTitle}>播放列表</ThemedText>
-              <ScrollView contentContainerStyle={dynamicStyles.episodeList}>
-                {detail.episodes.map((episode, index) => (
+              {detail.episodes.length > EPISODE_GROUP_SIZE && (
+                <View style={dynamicStyles.episodeGroupContainer}>
+                  {Array.from(
+                    { length: Math.ceil(detail.episodes.length / EPISODE_GROUP_SIZE) },
+                    (_, groupIndex) => {
+                      const start = groupIndex * EPISODE_GROUP_SIZE + 1;
+                      const end = Math.min((groupIndex + 1) * EPISODE_GROUP_SIZE, detail.episodes.length);
+                      return (
+                        <StyledButton
+                          key={groupIndex}
+                          text={`${start}-${end}`}
+                          onPress={() => setSelectedEpisodeGroup(groupIndex)}
+                          isSelected={selectedEpisodeGroup === groupIndex}
+                          style={dynamicStyles.episodeGroupButton}
+                          textStyle={dynamicStyles.episodeGroupButtonText}
+                        />
+                      );
+                    }
+                  )}
+                </View>
+              )}
+              <View style={dynamicStyles.episodeList}>
+                {displayedEpisodes.map(({ index }) => (
                   <StyledButton
                     key={index}
                     style={dynamicStyles.episodeButton}
@@ -267,7 +330,7 @@ export default function DetailScreen() {
                     textStyle={dynamicStyles.episodeButtonText}
                   />
                 ))}
-              </ScrollView>
+              </View>
             </View>
           </View>
         </ScrollView>
@@ -426,6 +489,20 @@ const createResponsiveStyles = (deviceType: string, spacing: number) => {
     episodesContainer: {
       marginTop: spacing,
       paddingBottom: spacing * 2,
+    },
+    episodeGroupContainer: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      marginBottom: spacing / 2,
+    },
+    episodeGroupButton: {
+      marginRight: 6,
+      marginBottom: 6,
+      paddingHorizontal: 8,
+      minHeight: 28,
+    },
+    episodeGroupButtonText: {
+      fontSize: 12,
     },
     episodesTitle: {
       fontSize: isMobile ? 16 : isTablet ? 18 : 20,

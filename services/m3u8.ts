@@ -32,7 +32,27 @@ export const getResolutionFromM3U8 = async (
 
   try {
     const fetchStart = performance.now();
-    const response = await fetch(url, { signal });
+    const timeoutController = new AbortController();
+    const timeoutId = setTimeout(() => timeoutController.abort(), 6000);
+
+    if (signal) {
+      if (signal.aborted) {
+        clearTimeout(timeoutId);
+        timeoutController.abort();
+      } else {
+        signal.addEventListener("abort", () => {
+          clearTimeout(timeoutId);
+          timeoutController.abort();
+        });
+      }
+    }
+
+    let response: Response;
+    try {
+      response = await fetch(url, { signal: timeoutController.signal });
+    } finally {
+      clearTimeout(timeoutId);
+    }
     const fetchEnd = performance.now();
     logger.info(`[PERF] M3U8 fetch took ${(fetchEnd - fetchStart).toFixed(2)}ms, status: ${response.status}`);
     
